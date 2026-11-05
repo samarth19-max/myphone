@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nothing leaves the device. Excluding every domain keeps the encrypted Vault, the wrapped
+     AES key, the decrypted cache copies and the recordings out of cloud backup and device
+     transfer. allowBackup="false" in the manifest is the first line of defence. -->
+<data-extraction-rules>
+    <cloud-backup><exclude domain="root"/><exclude domain="file"/><exclude domain="database"/><exclude domain="sharedpref"/><exclude domain="external"/></cloud-backup>
+    <device-transfer><exclude domain="root"/><exclude domain="file"/><exclude domain="database"/><exclude domain="sharedpref"/><exclude domain="external"/></device-transfer>
+</data-extraction-rules>

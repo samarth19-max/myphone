@@ -1,0 +1,29 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+}
+
+rootProject.name = 'CallrecPhone'
+include ':app'
+
+// Developing both together? Clone callrec next to this folder and its source is used instead of the published one.
+def localCallrec = new File(settingsDir, '../callrec')
+if (localCallrec.isDirectory()) {
+    includeBuild(localCallrec) {
+        dependencySubstitution {
+            substitute module('com.github.Youbal-oops:callrec') using project(':recorderlib')
+        }
+    }
+}

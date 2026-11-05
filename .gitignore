@@ -1,0 +1,12 @@
+local.properties
+build/
+.gradle/
+*.jks
+*.keystore
+.idea/
+*.iml
+.tools/
+dist/
+
+# ZCode Desktop session config (not part of the app)
+.zcode/

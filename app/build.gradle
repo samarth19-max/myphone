@@ -1,0 +1,40 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'dev.youbal.callrecphone'
+    // API 37 (Android 17) is delivered as a minor-versioned platform: android-37.0.
+    compileSdk 37
+    compileSdkMinor 0
+
+    defaultConfig {
+        applicationId 'dev.youbal.callrecphone'
+        // Android 15 (API 35) and above. Every modern behaviour change is opted into.
+        minSdk 35
+        targetSdk 37
+        versionCode 4
+        versionName '0.1.0'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release { minifyEnabled false }
+    }
+
+    // The pure-Java crypto tests run on the JVM; give the mockable android.jar benign defaults.
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
+    lint { abortOnError true }
+}
+
+dependencies {
+    // Your call-recording library. Resolved from ../callrec when that folder exists, otherwise from JitPack.
+    implementation 'com.github.Youbal-oops:callrec:0.3.0'
+    implementation 'androidx.core:core:1.13.1'
+    testImplementation 'junit:junit:4.13.2'
+}

@@ -1,0 +1,4 @@
+plugins {
+    // 8.13.x is the first AGP line that understands minor SDK levels (API 37 ships as 37.0).
+    id 'com.android.application' version '8.13.2' apply false
+}

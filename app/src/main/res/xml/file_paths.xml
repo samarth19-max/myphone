@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Plain (unencrypted) recordings live in the app's own folder on shared storage. -->
+    <external-files-path name="recordings" path="Recordings/"/>
+    <!-- Encrypted recordings are decrypted into this cache folder before they are played or shared,
+         so WhatsApp and every other recipient always receives ordinary audio. -->
+    <cache-path name="shared" path="shared/"/>
+    <!-- Fallback destination for "Save to phone" when a device rejects MediaStore writes. -->
+    <external-files-path name="exports" path="Music/"/>
+</paths>
