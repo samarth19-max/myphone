@@ -10,8 +10,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.util.Arrays;
+import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
 
 /**
  * Holds the single 256-bit key that encrypts every recording. The key is wrapped with a
@@ -56,7 +58,7 @@ public final class Keys {
         try {
             byte[] blob = Base64.decode(blob64, Base64.DEFAULT);
             byte[] canary = Base64.decode(canary64, Base64.DEFAULT);
-            byte[] raw = MODE_KEYSTORE.equals(mode) ? Aes.open(existingKeystoreKey(), blob, null) : blob;
+            byte[] raw = MODE_KEYSTORE.equals(mode) ? unwrapKeystoreBlob(existingKeystoreKey(), blob) : blob;
             SecretKey key = Aes.key(raw);
             if (!Arrays.equals(Aes.open(key, canary, AAD_CANARY), CANARY_PLAIN))
                 throw new Unavailable("The encryption key no longer matches your recordings.");
@@ -81,13 +83,49 @@ public final class Keys {
     private static void store(Context c, SecretKey key, byte[] canary) {
         byte[] raw = key.getEncoded();
         try {
-            // No AAD: Android Keystore AES/GCM keys reject updateAAD() on many builds.
-            commit(c, MODE_KEYSTORE, Aes.seal(keystoreKey(), raw, null), canary);
+            commit(c, MODE_KEYSTORE, keystoreWrap(keystoreKey(), raw), canary);
         } catch (Exception e) {
             // App-private storage is still protected by the app sandbox and file-based encryption.
             android.util.Log.w("CallrecKeys", "Keystore key wrapping unavailable; using app-private storage", e);
             commit(c, MODE_SOFTWARE, raw, canary);
         }
+    }
+
+    /**
+     * Android Keystore keys are created with randomized encryption required, so they generate
+     * their own IV and refuse a caller-supplied one ("Caller-provided IV not permitted"). Let the
+     * keystore choose the IV, read it back with getIV(), and store [ivLen][iv][ciphertext+tag].
+     */
+    private static byte[] keystoreWrap(SecretKey kek, byte[] raw) throws GeneralSecurityException {
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, kek);
+        byte[] body = cipher.doFinal(raw);
+        byte[] iv = cipher.getIV();
+        if (iv == null || iv.length == 0 || iv.length > 255) throw new GeneralSecurityException("Keystore returned an unusable IV");
+        byte[] out = new byte[1 + iv.length + body.length];
+        out[0] = (byte) iv.length;
+        System.arraycopy(iv, 0, out, 1, iv.length);
+        System.arraycopy(body, 0, out, 1 + iv.length, body.length);
+        return out;
+    }
+
+    private static byte[] unwrapKeystoreBlob(SecretKey kek, byte[] blob) throws GeneralSecurityException {
+        try { return keystoreUnwrap(kek, blob); }
+        catch (GeneralSecurityException first) {
+            // Tolerate a blob written by an early build that used Aes.seal (12-byte nonce prefix).
+            try { return Aes.open(kek, blob, null); }
+            catch (GeneralSecurityException second) { throw first; }
+        }
+    }
+
+    private static byte[] keystoreUnwrap(SecretKey kek, byte[] blob) throws GeneralSecurityException {
+        if (blob == null || blob.length < 2) throw new GeneralSecurityException("Wrapped key is truncated");
+        int ivLength = blob[0] & 0xff;
+        if (ivLength == 0 || 1 + ivLength >= blob.length) throw new GeneralSecurityException("Wrapped key is truncated");
+        byte[] iv = Arrays.copyOfRange(blob, 1, 1 + ivLength);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, kek, new GCMParameterSpec(128, iv));
+        return cipher.doFinal(blob, 1 + ivLength, blob.length - 1 - ivLength);
     }
 
     @SuppressLint("ApplySharedPref") // The key must be durable before the first recording is encrypted.

@@ -282,7 +282,16 @@ public final class Vault {
                 ContentValues done = new ContentValues();
                 done.put(MediaStore.Audio.Media.IS_PENDING, 0);
                 cr.update(uri, done, null, null);
-                return name;
+                // MediaStore renames duplicates to "name (1).m4a"; report the name actually used.
+                String actual = name;
+                try (android.database.Cursor cur = cr.query(uri,
+                        new String[]{MediaStore.Audio.Media.DISPLAY_NAME}, null, null, null)) {
+                    if (cur != null && cur.moveToFirst()) {
+                        String assigned = cur.getString(0);
+                        if (assigned != null && !assigned.isEmpty()) actual = assigned;
+                    }
+                } catch (Exception ignored) { }
+                return actual;
             }
         } catch (Exception e) {
             if (uri != null) { try { cr.delete(uri, null, null); } catch (Exception ignored) { } }
