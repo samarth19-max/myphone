@@ -9,15 +9,18 @@ import android.widget.TextView;
 
 /** What is known about the person on the line, laid out to read at a glance: where they are saved, the last call, and your note. */
 final class CallCard extends LinearLayout {
-    private final View savedBox, lastBox;
+    private final View savedBox, lastBox, noteBox;
     private final TextView saved, last, note;
 
     CallCard(Context c) {
         super(c); setOrientation(VERTICAL); setBackground(Ui.shape(0x1fffffff, 20, c)); setPadding(dp(16), dp(4), dp(16), dp(14));
         saved = value(false); savedBox = section("SAVED AS", saved);
         last = value(false); lastBox = section("LAST CALL", last);
-        note = value(true); section("NOTE", note);
+        note = value(true); noteBox = section("NOTE", note);
     }
+
+    /** Private, user-written notes must not be readable on the lock screen. */
+    void setNoteVisible(boolean visible) { noteBox.setVisibility(visible ? VISIBLE : GONE); }
 
     private int dp(float n) { return Ui.dp(getContext(), n); }
     private TextView value(boolean editable) {

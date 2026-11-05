@@ -162,6 +162,8 @@ public final class CallActivity extends Activity {
         try { bindFull(); } catch (Throwable e) { CrashLog.record(this, "CallActivity.bind", e); buildSafe(); bindSafe(); }
     }
     private void editNote(String phone) {
+        android.app.KeyguardManager keyguard = getSystemService(android.app.KeyguardManager.class);
+        if (keyguard != null && keyguard.isKeyguardLocked()) return; // no private note editing over the keyguard
         android.widget.EditText box = new android.widget.EditText(this); PhoneApp app = PhoneApp.get(this); box.setText(app.notes.get(phone)); box.setMinLines(3); box.setGravity(Gravity.TOP);
         new android.app.AlertDialog.Builder(this).setTitle("Note for this number").setView(box)
             .setPositiveButton("Save", (d, n) -> { app.notes.set(phone, box.getText().toString()); bind(); }).setNegativeButton("Cancel", null).show();
@@ -196,7 +198,11 @@ public final class CallActivity extends Activity {
         String title = !saved.isEmpty() ? saved : phone.isEmpty() ? "Private number" : PhoneNumbers.display(phone);
         name.setText(title); Ui.bindAvatar(avatar, !saved.isEmpty() ? saved : phone.isEmpty() ? "?" : title);
         number.setText(!saved.isEmpty() ? PhoneNumbers.display(phone) : "");
-        card.bind(app.savedLine(phone), CallLogs.last(app, phone, Long.MAX_VALUE, refresh), app.notes.get(phone), v -> editNote(phone));
+        android.app.KeyguardManager keyguard = getSystemService(android.app.KeyguardManager.class);
+        boolean locked = keyguard != null && keyguard.isKeyguardLocked();
+        card.setNoteVisible(!locked);
+        card.bind(app.savedLine(phone), CallLogs.last(app, phone, Long.MAX_VALUE, refresh),
+            locked ? "" : app.notes.get(phone), v -> editNote(phone));
 
         boolean ringing = state == Call.STATE_RINGING, dialing = state == Call.STATE_DIALING || state == Call.STATE_CONNECTING || state == Call.STATE_NEW || state == Call.STATE_PULLING_CALL, active = state == Call.STATE_ACTIVE, held = state == Call.STATE_HOLDING;
         status.setText(stateText(call)); status.setTextColor(active ? 0xff7ee2a8 : ringing ? 0xffffd479 : 0xffbcd0ff);

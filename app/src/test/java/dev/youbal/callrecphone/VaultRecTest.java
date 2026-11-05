@@ -63,4 +63,42 @@ public class VaultRecTest {
         assertTrue(r.encrypted);
         assertEquals("in_1_20261105-113000.m4a", r.displayName());
     }
+
+    @Test public void pathGuardAcceptsOnlyRealRecordingsInsideOurFolder() throws Exception {
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("recs");
+        String good = dir.resolve("in_12345_20261105-113000.m4a").toString();
+        assertTrue(Vault.safePlainPathAgainst(dir.toFile(), good));
+
+        // Anything outside the recordings folder is refused (would otherwise be read and deleted).
+        assertFalse(Vault.safePlainPathAgainst(dir.toFile(),
+            dir.resolve("../../shared_prefs/vault_keys.xml").toString()));
+        assertFalse(Vault.safePlainPathAgainst(dir.toFile(), "/etc/hosts"));
+        assertFalse(Vault.safePlainPathAgainst(dir.toFile(), dir.resolve("notes.txt").toString()));
+        assertFalse(Vault.safePlainPathAgainst(dir.toFile(), dir.resolve("in_1_20261105-113000.m4a.enc").toString()));
+        assertFalse(Vault.safePlainPathAgainst(dir.toFile(), null));
+        assertFalse(Vault.safePlainPathAgainst(dir.toFile(), ""));
+    }
+
+    @Test public void pathGuardRejectsQueueInjectionCharacters() throws Exception {
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("recs");
+        String base = dir.resolve("in_1_20261105-113000.m4a").toString();
+        assertFalse(Vault.safePlainPathAgainst(dir.toFile(), base + "|0|0|1"));
+        assertFalse(Vault.safePlainPathAgainst(dir.toFile(), base.replace("in_", "in_\n")));
+        assertFalse(Vault.safePlainPathAgainst(dir.toFile(), base.replace("in_", "in_\r")));
+    }
+
+    @Test public void pathGuardRejectsSymlinkEscape() throws Exception {
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("recs");
+        java.nio.file.Path outside = java.nio.file.Files.createTempDirectory("outside");
+        java.nio.file.Path target = outside.resolve("in_1_20261105-113000.m4a");
+        java.nio.file.Files.write(target, new byte[]{1, 2, 3});
+        java.nio.file.Path link = dir.resolve("in_1_20261105-113000.m4a");
+        try {
+            java.nio.file.Files.createSymbolicLink(link, target);
+            assertFalse("symlink must not be followed out of the folder",
+                Vault.safePlainPathAgainst(dir.toFile(), link.toString()));
+        } catch (java.nio.file.FileSystemException | UnsupportedOperationException e) {
+            // Symlinks unsupported on this host; the canonical-path check still applies at runtime.
+        }
+    }
 }

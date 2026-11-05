@@ -7,7 +7,6 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
@@ -49,6 +48,13 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Recents, dialpad, contacts and recordings. Everything shown comes from the phone itself. */
 public final class MainActivity extends Activity {
     private static final int REQ_CALL = 10, REQ_LOG = 13, REQ_CONTACTS = 14;
+    /** Untrusted ACTION_DIAL data is capped and reduced to characters legal in a tel: URI. */
+    private static final int MAX_DIALED = 32;
+    private static String safeDialed(String raw) {
+        if (raw == null) return "";
+        String clean = raw.replaceAll("[^0-9+*#]", "");
+        return clean.length() > MAX_DIALED ? clean.substring(0, MAX_DIALED) : clean;
+    }
 
     private PhoneApp app;
     private LinearLayout body;
@@ -82,7 +88,7 @@ public final class MainActivity extends Activity {
     @Override protected void onPause() { app.recordingListeners.remove(recordingsChanged); stopPlayback(); super.onPause(); }
 
     private void handleIntent(Intent intent) {
-        if (Intent.ACTION_DIAL.equals(intent.getAction())) { Uri data = intent.getData(); dialed = data == null ? "" : data.getSchemeSpecificPart(); page = "dialpad"; }
+        if (Intent.ACTION_DIAL.equals(intent.getAction())) { Uri data = intent.getData(); dialed = data == null ? "" : safeDialed(data.getSchemeSpecificPart()); page = "dialpad"; }
     }
 
     /** Saved names and the call log are read on a background thread; the visible list is refreshed in place when they arrive. */
@@ -113,7 +119,8 @@ public final class MainActivity extends Activity {
 
     private void placeCall(String number) {
         if (PhoneNumbers.normalize(number).isEmpty() && !number.matches("[+0-9*#]{1,30}")) { toast("Enter a phone number."); return; }
-        pendingNumber = number.replaceAll("[() .-]", "");
+        pendingNumber = safeDialed(number);
+        if (pendingNumber.isEmpty()) { toast("Enter a phone number."); return; }
         if (!has(Manifest.permission.CALL_PHONE)) { requestPermissions(new String[]{Manifest.permission.CALL_PHONE}, REQ_CALL); return; }
         try { getSystemService(TelecomManager.class).placeCall(Uri.fromParts("tel", pendingNumber, null), new Bundle()); }
         catch (SecurityException e) { toast("Allow the Phone permission first."); }
@@ -225,7 +232,7 @@ public final class MainActivity extends Activity {
         body.addView(new View(this), lp(0, 0, 1)); body.addView(dialedText, lp(-1, dp(56)));
         suggestions = Ui.text(this, "", 14, Ui.MUTED); suggestions.setGravity(Gravity.CENTER); suggestions.setMinHeight(dp(48)); body.addView(suggestions);
         TextView paste = Ui.text(this, "Paste", 13, Ui.PRIMARY); paste.setGravity(Gravity.CENTER); paste.setPadding(dp(16), dp(6), dp(16), dp(6));
-        paste.setOnClickListener(v -> { ClipboardManager clip = getSystemService(ClipboardManager.class); ClipData data = clip == null ? null : clip.getPrimaryClip(); if (data != null && data.getItemCount() > 0) { dialed = data.getItemAt(0).coerceToText(this).toString().replaceAll("[^0-9+*#]", ""); updateDialed(); } });
+        paste.setOnClickListener(v -> { ClipboardManager clip = getSystemService(ClipboardManager.class); ClipData data = clip == null ? null : clip.getPrimaryClip(); if (data != null && data.getItemCount() > 0) { dialed = safeDialed(data.getItemAt(0).coerceToText(this).toString()); updateDialed(); } });
         body.addView(paste);
         String[] keys = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"};
         for (int r = 0; r < 4; r++) {
@@ -246,6 +253,7 @@ public final class MainActivity extends Activity {
         body.addView(last); updateDialed();
     }
     private void updateDialed() {
+        if (dialed.length() > MAX_DIALED) dialed = dialed.substring(0, MAX_DIALED);
         dialedText.setText(PhoneNumbers.display(dialed));
         StringBuilder names = new StringBuilder(); int found = 0;
         if (!dialed.isEmpty()) {
@@ -353,7 +361,7 @@ public final class MainActivity extends Activity {
             try { plain = Vault.plainFile(this, r); }
             catch (Exception e) { app.main.post(() -> toast("Could not decrypt this recording: " + e.getMessage())); return; }
             app.main.post(() -> {
-                if (token != playToken || isFinishing()) return;
+                if (token != playToken || isFinishing() || isDestroyed()) return;
                 try {
                     player = new MediaPlayer(); player.setDataSource(plain.getAbsolutePath()); player.prepare(); player.start();
                     playing = r.displayName();
@@ -376,18 +384,16 @@ public final class MainActivity extends Activity {
                 File plain = Vault.plainFile(this, r);
                 Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", plain);
                 app.main.post(() -> {
-                    if (isFinishing()) return;
+                    if (isFinishing() || isDestroyed()) return;
                     try {
                         Intent send = new Intent(Intent.ACTION_SEND).setType(Vault.MIME)
                             .putExtra(Intent.EXTRA_STREAM, uri)
                             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        // ClipData keeps the URI grant alive through Intent.createChooser (Android 10+).
+                        // ClipData makes the system grant read access to the ONE app the user picks.
+                        // Deliberately do not grantUriPermission() to every resolved handler: that
+                        // would let any ACTION_SEND app read a predictable decrypted content URI.
                         send.setClipData(new ClipData("recording", new String[]{Vault.MIME}, new ClipData.Item(uri)));
-                        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        for (ResolveInfo ri : getPackageManager().queryIntentActivities(send, PackageManager.MATCH_DEFAULT_ONLY))
-                            grantUriPermission(ri.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         Intent chooser = Intent.createChooser(send, "Share decrypted recording");
-                        // Also carry the grant on the chooser so the selected target can read the URI.
                         chooser.setClipData(new ClipData("recording", new String[]{Vault.MIME}, new ClipData.Item(uri)));
                         chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         startActivity(chooser);

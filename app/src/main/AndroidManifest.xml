@@ -9,14 +9,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-feature android:name="android.hardware.telephony" android:required="false"/>
 
-    <!-- Android 11+ package visibility: let queryIntentActivities see share targets (WhatsApp, etc.)
-         so we can grant them read access to the decrypted recording URI. -->
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.SEND"/>
-            <data android:mimeType="audio/*"/>
-        </intent>
-    </queries>
+    <!-- No <queries>: the app never enumerates other packages. The system resolver handles the
+         share chooser and grants the URI only to the app the user actually picks. -->
 
     <!-- Transitive ADB/native libraries declare these unused permissions; strip them from the APK.
          On Android 13+ the two storage permissions are deprecated and never granted. -->

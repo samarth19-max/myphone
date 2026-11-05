@@ -196,8 +196,17 @@ public final class SettingsActivity extends Activity {
         card.addView(Ui.button(this, "Show recovery key", false, v -> {
             try {
                 final String key = Keys.exportRecovery(this);
-                new AlertDialog.Builder(this).setTitle("Recovery key").setMessage(key)
-                    .setPositiveButton("Copy", (d, w) -> { getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Callrec recovery key", key)); Toast.makeText(this, "Copied. Keep it private.", Toast.LENGTH_SHORT).show(); })
+                new AlertDialog.Builder(this).setTitle("Recovery key")
+                    .setMessage("Anyone with this key can decrypt your recordings. Store it offline and never share it.\n\n" + key)
+                    .setPositiveButton("Copy", (d, w) -> {
+                        ClipData clip = ClipData.newPlainText("Callrec recovery key", key);
+                        // Android 13+ masks the clipboard preview for sensitive content.
+                        android.os.PersistableBundle extras = new android.os.PersistableBundle();
+                        extras.putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true);
+                        clip.getDescription().setExtras(extras);
+                        getSystemService(ClipboardManager.class).setPrimaryClip(clip);
+                        Toast.makeText(this, "Copied. Keep it private — the clipboard is readable by other apps.", Toast.LENGTH_LONG).show();
+                    })
                     .setNegativeButton("Close", null).show();
             } catch (Keys.Unavailable e) { Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show(); }
         }));
@@ -231,7 +240,14 @@ public final class SettingsActivity extends Activity {
         LinearLayout card = Ui.card(this); content.addView(card); card.addView(Ui.title(this, "Problem report", 18));
         card.addView(Ui.text(this, "Saved on this phone only. Copy it when you report a bug.", 13, Ui.MUTED));
         TextView trace = Ui.text(this, problem.length() > 1200 ? problem.substring(0, 1200) + "…" : problem, 11, Ui.MUTED); trace.setTextIsSelectable(true); card.addView(trace);
-        card.addView(Ui.button(this, "Copy report", true, v -> { getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Callrec Phone report", problem)); Toast.makeText(this, "Copied.", Toast.LENGTH_SHORT).show(); }));
+        card.addView(Ui.button(this, "Copy report", true, v -> {
+            ClipData clip = ClipData.newPlainText("Callrec Phone report", problem);
+            android.os.PersistableBundle extras = new android.os.PersistableBundle();
+            extras.putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true);
+            clip.getDescription().setExtras(extras);
+            getSystemService(ClipboardManager.class).setPrimaryClip(clip);
+            Toast.makeText(this, "Copied.", Toast.LENGTH_SHORT).show();
+        }));
         card.addView(Ui.button(this, "Clear report", false, v -> { CrashLog.clear(this); build(); }));
     }
     private void aboutCard() {

@@ -86,7 +86,8 @@ public final class Keys {
             commit(c, MODE_KEYSTORE, keystoreWrap(keystoreKey(), raw), canary);
         } catch (Exception e) {
             // App-private storage is still protected by the app sandbox and file-based encryption.
-            android.util.Log.w("CallrecKeys", "Keystore key wrapping unavailable; using app-private storage", e);
+            // Log only the message: a full stack trace can expose internal paths on older/rooted devices.
+            android.util.Log.w("CallrecKeys", "Keystore key wrapping unavailable (" + e + "); using app-private storage");
             commit(c, MODE_SOFTWARE, raw, canary);
         }
     }
@@ -196,6 +197,8 @@ public final class Keys {
     public static void importRecovery(Context c, String text) throws Unavailable {
         String value = text == null ? "" : text.trim();
         if (!value.startsWith(RECOVERY_PREFIX)) throw new Unavailable("That is not a Callrec recovery key.");
+        // Bound the paste before decoding: a bogus multi-megabyte string must not allocate freely.
+        if (value.length() > 2048) throw new Unavailable("That recovery key is too long.");
         byte[] all;
         try { all = Base64.decode(value.substring(RECOVERY_PREFIX.length()), Base64.DEFAULT); }
         catch (IllegalArgumentException e) { throw new Unavailable("That recovery key is damaged.", e); }

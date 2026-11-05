@@ -126,6 +126,7 @@ public final class Aes {
      */
     public static void encrypt(SecretKey key, File plain, File dest, long meta) throws GeneralSecurityException, IOException {
         if (!plain.isFile()) throw new IOException("Recording to encrypt is missing");
+        dest.getAbsoluteFile().getParentFile().mkdirs();
         long size = plain.length();
         byte[] h = header(size, meta);
         Cipher c = cipher(key, Cipher.ENCRYPT_MODE, nonceOf(h), aad(h));
@@ -147,6 +148,7 @@ public final class Aes {
      */
     public static Header decrypt(SecretKey key, File enc, File dest) throws GeneralSecurityException, IOException {
         if (!enc.isFile() || enc.length() < HEADER) throw new IOException("Encrypted file is truncated");
+        dest.getAbsoluteFile().getParentFile().mkdirs();
         File tmp = sibling(dest, ".dec-tmp");
         try {
             long originalSize, meta, written;

@@ -43,7 +43,8 @@ import javax.crypto.SecretKey;
 public final class Vault {
     public static final String MIME = "audio/mp4";
     private static final String PUBLIC_DIR = Environment.DIRECTORY_MUSIC + "/Callrec Phone";
-    private static final long TEMP_TTL = 24L * 60 * 60 * 1000;
+    /** Decrypted cache copies are short-lived; two hours is plenty for any receiving app to read them. */
+    private static final long TEMP_TTL = 2L * 60 * 60 * 1000;
     private static final long MIGRATE_AGE = 5L * 60 * 1000;
     private static final Object LOCK = new Object();
     /** Set by the in-call service so startup migration never touches a file that is still being written. */
@@ -151,23 +152,54 @@ public final class Vault {
     }
 
     // ---- encryption lifecycle -----------------------------------------------------------------------------------------
+    /**
+     * Only recordings inside our own recordings folder may ever be encrypted or wiped. The path
+     * arrives from a separate recorder process (or from the durable queue file), so it is untrusted:
+     * without this check a forged path would let the app read an arbitrary file into the vault,
+     * share its contents, and then delete the original. Canonical paths also defeat symlinks.
+     */
+    private static boolean safePlainPath(Context c, String path) {
+        return safePlainPathAgainst(plainDir(c), path);
+    }
+
+    /** Pure form, so the rejection rules can be unit-tested without an Android Context. */
+    static boolean safePlainPathAgainst(File dir, String path) {
+        if (path == null || path.isEmpty() || path.indexOf('|') >= 0
+                || path.indexOf('\n') >= 0 || path.indexOf('\r') >= 0) return false;
+        File f = new File(path);
+        Rec r = Rec.parse(f);
+        if (r == null || r.encrypted) return false;
+        try {
+            File parent = f.getCanonicalFile().getParentFile();
+            return parent != null && parent.equals(dir.getCanonicalFile());
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     /** Called on the main thread when the recorder finishes: remember the file, then process it off-thread. */
     static void enqueue(Context c, String path, long durationMs) {
+        if (!safePlainPath(c, path)) return;
         enqueueAll(c, java.util.Collections.singletonList(durationMs + "|" + path));
     }
 
     private static void enqueueAll(Context c, List<String> entries) {
         if (!Prefs.of(c).encrypt()) return;
+        List<String> safe = new ArrayList<>();
+        for (String entry : entries) {
+            int bar = entry.indexOf('|');
+            if (bar >= 0 && safePlainPath(c, entry.substring(bar + 1))) safe.add(entry);
+        }
+        if (safe.isEmpty()) return;
         synchronized (LOCK) {
             File pf = pendingFile(c);
             pf.getParentFile().mkdirs();
             List<String> lines = readLines(pf);
-            for (String entry : entries) {
-                int bar = entry.indexOf('|');
-                String path = bar < 0 ? entry : entry.substring(bar + 1);
+            for (String entry : safe) {
+                String path = entry.substring(entry.indexOf('|') + 1);
                 lines.removeIf(l -> l.endsWith("|" + path));
             }
-            lines.addAll(entries);
+            lines.addAll(safe);
             writeLines(c, pf, lines);
         }
     }
@@ -194,6 +226,8 @@ public final class Vault {
                 long duration = 0;
                 try { duration = Long.parseLong(line.substring(0, bar)); } catch (NumberFormatException ignored) { }
                 File plain = new File(line.substring(bar + 1));
+                // The queue file is on disk and could have been tampered with; re-validate it.
+                if (!safePlainPath(c, plain.getAbsolutePath())) continue;
                 if (!plain.isFile()) continue; // already gone
                 File dest = new File(vaultDir(c), plain.getName() + ".enc");
                 try {
@@ -307,6 +341,7 @@ public final class Vault {
 
     /** Decrypts every recording into Music/Callrec Phone. Returns how many were saved. */
     static int saveAllToPhone(Context c) throws Keys.Unavailable {
+        Keys.master(c); // Fail loudly on a lost key instead of reporting a misleading "0 saved".
         int saved = 0, failed = 0;
         for (Rec r : list(c)) {
             try { saveToPhone(c, r); saved++; }
@@ -342,6 +377,7 @@ public final class Vault {
 
     /** Drops a recording the library decided was silent, and forgets any queued encryption for it. */
     static void discard(Context c, String path) {
+        if (!safePlainPath(c, path)) return; // never delete an arbitrary path
         dropPending(c, path);
         new File(path).delete();
     }

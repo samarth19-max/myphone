@@ -95,7 +95,11 @@ public final class PairingService extends Service {
         Notification.Builder builder = new Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_phone).setContentTitle(title).setContentText(text).setOngoing(true).setOnlyAlertOnce(true);
         if (withCode) {
             RemoteInput input = new RemoteInput.Builder(KEY).setLabel("Six-digit code").build();
-            PendingIntent send = PendingIntent.getService(this, 1, new Intent(this, PairingService.class).setAction(ACTION_CODE), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
+            // RemoteInput requires a MUTABLE PendingIntent (the system fills in the results). The
+            // explicit component + this service being exported="false" keep it unredirectable.
+            PendingIntent send = PendingIntent.getService(this, 1,
+                new Intent(this, PairingService.class).setAction(ACTION_CODE).setPackage(getPackageName()),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
             builder.addAction(new Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_phone), "Enter code", send).addRemoteInput(input).build());
         }
         return builder.build();
